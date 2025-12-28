@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emma's Dog Game</title>
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+    background: #32CD32; /* grass */
+    touch-action: none;
+}
+
+/* Title with hearts */
+#titleContainer {
+    position: absolute;
+    top: 20px;
+    width: 100%;
+    text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 3;
+    user-select: none;
+}
+
+#gameTitle {
+    font-family: 'Comic Sans MS', sans-serif;
+    font-size: 42px;
+    color: hotpink;
+    font-weight: bold; /* thicker */
+    margin: 0 10px;
+}
+
+.titleHeart {
+    font-size: 32px;
+    margin: 0 5px;
+}
+
+/* Canvas for dog */
+#dogCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+}
+
+/* Bone */
+.bone {
+    position: absolute;
+    width: 40px;
+    height: 12px;
+    background: #fff;
+    border-radius: 6px;
+    z-index: 2;
+    animation: bounce 0.5s infinite alternate;
+}
+.bone::before, .bone::after {
+    content:'';
+    position:absolute;
+    width:16px;
+    height:16px;
+    background:white;
+    border-radius:50%;
+    top:-2px;
+}
+.bone::before { left:-8px; }
+.bone::after { right:-8px; }
+
+@keyframes bounce {0%{transform:translateY(0);}100%{transform:translateY(-10px);}}
+.bone.eaten {animation: eatAnim 0.3s forwards;}
+@keyframes eatAnim {0%{transform:scale(1);opacity:1;}100%{transform:scale(1.5);opacity:0;}}
+
+/* Hearts above dog */
+.heart {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: red;
+    transform: rotate(-45deg);
+    pointer-events: none;
+    animation: floatUp 1s forwards;
+}
+.heart::before, .heart::after {
+    content:'';
+    position:absolute;
+    width:20px;
+    height:20px;
+    background:red;
+    border-radius:50%;
+}
+.heart::before{top:-10px;left:0;}
+.heart::after{top:0;left:10px;}
+@keyframes floatUp{
+0%{transform:rotate(-45deg) translateY(0) scale(1);opacity:1;}
+100%{transform:rotate(-45deg) translateY(-100px) scale(1.5);opacity:0;}
+}
+</style>
+</head>
+<body>
+
+<div id="titleContainer">
+    <div class="titleHeart">❤️</div>
+    <div class="titleHeart">❤️</div>
+    <h1 id="gameTitle">Emma's Dog Game</h1>
+    <div class="titleHeart">❤️</div>
+    <div class="titleHeart">❤️</div>
+</div>
+
+<canvas id="dogCanvas"></canvas>
+<audio id="barkSound" src="free-dog-bark-419014.mp3" preload="auto"></audio>
+
+<script>
+const canvas = document.getElementById('dogCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const barkSound = document.getElementById('barkSound');
+
+let dog = {
+    x: canvas.width/2,
+    y: canvas.height-120,
+    size: 100,
+    target: null,
+    tailAngle: 0,
+    tailDirection: 1,
+    legOffset: 0,
+    legDirection: 1,
+    speed: 0.015
+};
+
+let bones = [];
+
+// Draw dog
+function drawDog() {
+    const {x, y, size, tailAngle, legOffset} = dog;
+
+    ctx.fillStyle = '#F5A623';
+    ctx.fillRect(x - size/3, y, 16, 30 + legOffset);
+    ctx.fillRect(x + size/3 - 16, y, 16, 30 + legOffset);
+
+    ctx.beginPath();
+    ctx.ellipse(x, y - 15, size/2, size/3, 0, 0, Math.PI*2);
+    ctx.fillStyle = '#F5A623';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(x, y - size/2, size/3, 0, Math.PI*2);
+    ctx.fillStyle = '#F5A623';
+    ctx.fill();
+
+    ctx.fillStyle = '#D98B33';
+    ctx.beginPath();
+    ctx.ellipse(x - size/4, y - size/2 - 10, 12, 20, -0.5, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(x + size/4, y - size/2 - 10, 12, 20, 0.5, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = 'black';
+    ctx.beginPath();
+    ctx.arc(x - 12, y - size/2, 6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + 12, y - size/2, 6, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(x, y - size/2 + 15, 6, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.save();
+    ctx.translate(x + size/2, y - 10);
+    ctx.rotate(tailAngle);
+    ctx.fillStyle = '#F5A623';
+    ctx.fillRect(0, -7, 35, 12);
+    ctx.restore();
+}
+
+// Animate
+function animate() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    if(dog.target){
+        const dx = dog.target.x - dog.x;
+        const dy = dog.target.y - dog.y;
+        const dist = Math.hypot(dx, dy);
+        if(dist < 5){
+            bones.forEach(bone=>{
+                const bx = parseFloat(bone.style.left) + 20;
+                const by = parseFloat(bone.style.top) + 6;
+                if(Math.hypot(bx - dog.x, by - dog.y) < 10){
+                    bone.classList.add('eaten');
+                    setTimeout(()=>bone.remove(),300);
+                    bones = [];
+                }
+            });
+            dog.target = null;
+        }else{
+            dog.x += dx * dog.speed;
+            dog.y += dy * dog.speed;
+        }
+    }
+
+    dog.tailAngle += 0.05 * dog.tailDirection;
+    if(dog.tailAngle > 0.5 || dog.tailAngle < -0.5) dog.tailDirection *= -1;
+
+    dog.legOffset += 0.5 * dog.legDirection;
+    if(dog.legOffset > 5 || dog.legOffset < -5) dog.legDirection *= -1;
+
+    drawDog();
+    requestAnimationFrame(animate);
+}
+animate();
+
+// Add bone
+function addBone(x, y){
+    if(bones.length > 0) return;
+
+    const bone = document.createElement('div');
+    bone.className = 'bone';
+    bone.style.left = (x - 20) + 'px';
+    bone.style.top = (y - 6) + 'px';
+    document.body.appendChild(bone);
+    bones.push(bone);
+
+    dog.target = {x:x, y:y};
+
+    // Bark sound
+    barkSound.currentTime = 0;
+    barkSound.play().catch(()=>console.log("Tap first to enable sound"));
+}
+
+// Hearts
+function addHearts(){
+    const x = dog.x;
+    const y = dog.y - dog.size/2;
+    for(let i=0;i<5;i++){
+        const heart = document.createElement('div');
+        heart.className = 'heart';
+        heart.style.left = (x + Math.random()*40 - 20) + 'px';
+        heart.style.top = (y + Math.random()*40 - 20) + 'px';
+        document.body.appendChild(heart);
+        setTimeout(()=>heart.remove(),1000);
+    }
+}
+
+// Click/tap
+function handleTap(e){
+    e.preventDefault();
+    let x, y;
+    if(e.touches){ x = e.touches[0].clientX; y = e.touches[0].clientY; }
+    else { x = e.clientX; y = e.clientY; }
+
+    const dx = x - dog.x;
+    const dy = y - dog.y;
+    if(Math.hypot(dx, dy) < dog.size/2){
+        addHearts();
+    }else{
+        addBone(x,y);
+    }
+}
+
+document.body.addEventListener('click', handleTap);
+document.body.addEventListener('touchstart', handleTap);
+
+window.addEventListener('resize', ()=>{
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+});
+</script>
+</body>
+</html>
